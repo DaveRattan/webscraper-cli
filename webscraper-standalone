@@ -3,8 +3,16 @@
 
 # Get the directory where this script is located (resolve symlinks for macOS)
 if [[ "$OSTYPE" == "darwin"* ]]; then
-    # macOS
-    SCRIPT_PATH="$(python -c "import os; print(os.path.realpath('${BASH_SOURCE[0]}'))")"
+    # macOS - use python3 and handle symlinks
+    if command -v python3 >/dev/null 2>&1; then
+        SCRIPT_PATH="$(python3 -c "import os; print(os.path.realpath('${BASH_SOURCE[0]}'))")"
+    else
+        # Fallback: manually resolve symlink
+        SCRIPT_PATH="${BASH_SOURCE[0]}"
+        while [ -L "$SCRIPT_PATH" ]; do
+            SCRIPT_PATH="$(readlink "$SCRIPT_PATH")"
+        done
+    fi
 else
     # Linux
     SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
@@ -22,7 +30,7 @@ if [ ! -d "$VENV_DIR" ]; then
 fi
 
 # Check if virtual environment has the required packages
-if [ ! -f "$VENV_DIR/bin/python" ]; then
+if [ ! -f "$VENV_DIR/bin/python3" ] && [ ! -f "$VENV_DIR/bin/python" ]; then
     echo "❌ Virtual environment is corrupted"
     echo "   Please reinstall by running:"
     echo "   cd $WEBSCRAPER_DIR && rm -rf webscraper_env && ./install.sh"
@@ -33,12 +41,18 @@ fi
 cd "$WEBSCRAPER_DIR"
 source "$VENV_DIR/bin/activate"
 
+# Use python3 if available, otherwise python
+PYTHON_CMD="python3"
+if ! command -v python3 >/dev/null 2>&1; then
+    PYTHON_CMD="python"
+fi
+
 # Check if typer is installed
-if ! python -c "import typer" 2>/dev/null; then
+if ! $PYTHON_CMD -c "import typer" 2>/dev/null; then
     echo "❌ Dependencies not installed in virtual environment"
     echo "   Please run: cd $WEBSCRAPER_DIR && ./install.sh"
     exit 1
 fi
 
 # Run the webscraper with all arguments
-exec python main.py "$@"
+exec $PYTHON_CMD main.py "$@"
