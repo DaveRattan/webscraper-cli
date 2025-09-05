@@ -9,6 +9,11 @@ from rich.console import Console
 from rich.prompt import Prompt, Confirm
 from rich.progress import Progress, SpinnerColumn, TextColumn
 import asyncio
+import sys
+import nest_asyncio
+
+# Apply nest_asyncio to allow nested event loops
+nest_asyncio.apply()
 
 from cli.prompts import get_save_directory, show_crawl_options
 from cli.display import display_site_map, show_download_progress
@@ -23,6 +28,19 @@ app = typer.Typer(
     context_settings={"help_option_names": ["-h", "--help"]}
 )
 console = Console()
+
+def run_async_safe(coro):
+    """Run async function safely, handling existing event loops"""
+    try:
+        # With nest_asyncio applied, we can safely use asyncio.run
+        return asyncio.run(coro)
+    except RuntimeError as e:
+        if "cannot be called from a running event loop" in str(e):
+            # Fallback: run in the current loop
+            loop = asyncio.get_event_loop()
+            return loop.run_until_complete(coro)
+        else:
+            raise
 
 @app.command()
 def scrape(
@@ -59,8 +77,8 @@ def scrape(
     scraper = WebScraper(config)
     
     try:
-        # Start the crawling process
-        asyncio.run(run_scraping_session(url, crawler, scraper, config))
+        # Start the crawling process using safe async runner
+        run_async_safe(run_scraping_session(url, crawler, scraper, config))
         
     except KeyboardInterrupt:
         console.print("\n❌ Scraping interrupted by user")
