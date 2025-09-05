@@ -27,45 +27,49 @@ console = Console()
 
 def run_async_safe(coro):
     """Run async function safely, handling existing event loops using only built-in Python"""
+    # First, check if we're already in an async context
     try:
-        # First, try the standard way
-        return asyncio.run(coro)
-    except RuntimeError as e:
-        if "cannot be called from a running event loop" in str(e):
-            # We're in an environment with an existing event loop
-            # Check if we can get the current loop
+        # Try to get the current running loop
+        current_loop = asyncio.get_running_loop()
+        console.print("⚠️  Detected running event loop, using thread-based execution")
+        
+        # We're in an async context, so we need to run in a separate thread
+        import threading
+        import concurrent.futures
+        
+        def run_in_new_thread():
+            # Create a completely new event loop in this thread
+            new_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(new_loop)
             try:
-                loop = asyncio.get_running_loop()
-                # Create a task and run it
-                task = loop.create_task(coro)
-                # Since we can't await in a sync function, we need to handle this differently
-                # Use a thread to run the coroutine in a new event loop
-                import threading
-                import concurrent.futures
-                
-                def run_in_new_loop():
-                    new_loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(new_loop)
-                    try:
-                        return new_loop.run_until_complete(coro)
-                    finally:
-                        new_loop.close()
-                        asyncio.set_event_loop(None)
-                
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(run_in_new_loop)
-                    return future.result()
-                    
-            except RuntimeError:
-                # No running loop, but asyncio.run still failed - try the old way
+                return new_loop.run_until_complete(coro)
+            finally:
+                new_loop.close()
+                # Clean up the thread-local event loop
+                asyncio.set_event_loop(None)
+        
+        # Run in a separate thread with its own event loop
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(run_in_new_thread)
+            return future.result()
+            
+    except RuntimeError:
+        # No running event loop detected, try the standard approach
+        try:
+            return asyncio.run(coro)
+        except RuntimeError as e:
+            if "cannot be called from a running event loop" in str(e) or "already running" in str(e):
+                # Fallback: manually create and run loop
+                console.print("⚠️  Using manual event loop creation")
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 try:
                     return loop.run_until_complete(coro)
                 finally:
                     loop.close()
-        else:
-            raise
+                    asyncio.set_event_loop(None)
+            else:
+                raise
 
 @app.command()
 def scrape(
@@ -103,13 +107,32 @@ def scrape(
     
     try:
         # Start the crawling process using safe async runner
-        run_async_safe(run_scraping_session(url, crawler, scraper, config))
+        console.print("🔄 Starting async scraping session...")
+        
+        # Create a fresh coroutine each time to avoid "cannot reuse already awaited coroutine"
+        async def create_scraping_session():
+            return await run_scraping_session(url, crawler, scraper, config)
+        
+        run_async_safe(create_scraping_session())
         
     except KeyboardInterrupt:
         console.print("\n❌ Scraping interrupted by user")
         raise typer.Exit(1)
     except Exception as e:
         console.print(f"❌ Error during scraping: {e}")
+        console.print("🔍 Error details:")
+        import traceback
+        console.print(traceback.format_exc())
+        
+        # Try to provide helpful suggestions
+        if "event loop" in str(e).lower() or "already running" in str(e).lower():
+            console.print("\n💡 [yellow]Async Event Loop Issue Detected[/yellow]")
+            console.print("This might be caused by:")
+            console.print("• Running in an IDE with an active event loop")
+            console.print("• Jupyter notebook environment")
+            console.print("• Another async application running")
+            console.print("\nTry running from a regular terminal instead.")
+        
         raise typer.Exit(1)
 
 async def run_scraping_session(url: str, crawler: WebCrawler, scraper: WebScraper, config: Config):

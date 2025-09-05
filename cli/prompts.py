@@ -6,10 +6,40 @@ from pathlib import Path
 from typing import List, Optional
 import questionary
 from rich.console import Console
-from rich.prompt import Prompt
+from rich.prompt import Prompt, Confirm
 from rich.panel import Panel
+import asyncio
+import concurrent.futures
+import threading
 
 console = Console()
+
+def safe_questionary_ask(question):
+    """
+    Safely ask questionary questions, handling event loop conflicts
+    """
+    try:
+        # Try to get current loop
+        loop = asyncio.get_running_loop()
+        
+        # We're in an async context, run questionary in a separate thread
+        def run_questionary():
+            # Create a new event loop for this thread
+            new_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(new_loop)
+            try:
+                return question.ask()
+            finally:
+                new_loop.close()
+                asyncio.set_event_loop(None)
+        
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(run_questionary)
+            return future.result()
+            
+    except RuntimeError:
+        # No running event loop, safe to use questionary directly
+        return question.ask()
 
 def get_save_directory() -> str:
     """
@@ -33,9 +63,9 @@ def get_save_directory() -> str:
                     continue
                 
                 if any(path.iterdir()):
-                    overwrite = questionary.confirm(
+                    overwrite = safe_questionary_ask(questionary.confirm(
                         f"Directory {path} is not empty. Continue anyway?"
-                    ).ask()
+                    ))
                     if not overwrite:
                         continue
             else:
@@ -59,23 +89,23 @@ def show_crawl_options() -> dict:
     options = {}
     
     # Max depth
-    options['max_depth'] = questionary.text(
+    options['max_depth'] = safe_questionary_ask(questionary.text(
         "Maximum crawl depth (how many levels deep to go):",
         default="3",
         validate=lambda x: x.isdigit() and int(x) > 0
-    ).ask()
+    ))
     options['max_depth'] = int(options['max_depth'])
     
     # Rate limiting
-    options['delay'] = questionary.text(
+    options['delay'] = safe_questionary_ask(questionary.text(
         "Delay between requests (seconds):",
         default="1.0",
         validate=lambda x: x.replace('.', '').isdigit()
-    ).ask()
+    ))
     options['delay'] = float(options['delay'])
     
     # File types to download
-    file_types = questionary.checkbox(
+    file_types = safe_questionary_ask(questionary.checkbox(
         "Select file types to download:",
         choices=[
             "PDF (.pdf)",
@@ -87,15 +117,15 @@ def show_crawl_options() -> dict:
             "Archives (.zip, .rar, .tar)"
         ],
         default=["PDF (.pdf)", "Word Documents (.doc, .docx)", "Excel Files (.xls, .xlsx)"]
-    ).ask()
+    ))
     
     options['file_types'] = file_types
     
     # Respect robots.txt
-    options['respect_robots'] = questionary.confirm(
+    options['respect_robots'] = safe_questionary_ask(questionary.confirm(
         "Respect robots.txt?",
         default=True
-    ).ask()
+    ))
     
     return options
 
@@ -114,7 +144,7 @@ def confirm_crawl_start(url: str, output_dir: str, options: dict) -> bool:
         style="yellow"
     ))
     
-    return questionary.confirm("Start crawling?").ask()
+    return safe_questionary_ask(questionary.confirm("Start crawling?"))
 
 def select_paths_to_process(discovered_paths: List[str]) -> List[str]:
     """
@@ -133,7 +163,7 @@ def select_paths_to_process(discovered_paths: List[str]) -> List[str]:
         console.print(f"  ... and {len(discovered_paths) - 10} more")
     
     # Selection options
-    choice = questionary.select(
+    choice = safe_questionary_ask(questionary.select(
         "How would you like to proceed?",
         choices=[
             "Process all paths",
@@ -141,16 +171,16 @@ def select_paths_to_process(discovered_paths: List[str]) -> List[str]:
             "Process first 10 paths only",
             "Cancel"
         ]
-    ).ask()
+    ))
     
     if choice == "Process all paths":
         return discovered_paths
     elif choice == "Process first 10 paths only":
         return discovered_paths[:10]
     elif choice == "Select specific paths":
-        return questionary.checkbox(
+        return safe_questionary_ask(questionary.checkbox(
             "Select paths to process:",
             choices=discovered_paths
-        ).ask()
+        ))
     else:
         return []
