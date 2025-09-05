@@ -10,10 +10,6 @@ from rich.prompt import Prompt, Confirm
 from rich.progress import Progress, SpinnerColumn, TextColumn
 import asyncio
 import sys
-import nest_asyncio
-
-# Apply nest_asyncio to allow nested event loops
-nest_asyncio.apply()
 
 from cli.prompts import get_save_directory, show_crawl_options
 from cli.display import display_site_map, show_download_progress
@@ -30,15 +26,44 @@ app = typer.Typer(
 console = Console()
 
 def run_async_safe(coro):
-    """Run async function safely, handling existing event loops"""
+    """Run async function safely, handling existing event loops using only built-in Python"""
     try:
-        # With nest_asyncio applied, we can safely use asyncio.run
+        # First, try the standard way
         return asyncio.run(coro)
     except RuntimeError as e:
         if "cannot be called from a running event loop" in str(e):
-            # Fallback: run in the current loop
-            loop = asyncio.get_event_loop()
-            return loop.run_until_complete(coro)
+            # We're in an environment with an existing event loop
+            # Check if we can get the current loop
+            try:
+                loop = asyncio.get_running_loop()
+                # Create a task and run it
+                task = loop.create_task(coro)
+                # Since we can't await in a sync function, we need to handle this differently
+                # Use a thread to run the coroutine in a new event loop
+                import threading
+                import concurrent.futures
+                
+                def run_in_new_loop():
+                    new_loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(new_loop)
+                    try:
+                        return new_loop.run_until_complete(coro)
+                    finally:
+                        new_loop.close()
+                        asyncio.set_event_loop(None)
+                
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(run_in_new_loop)
+                    return future.result()
+                    
+            except RuntimeError:
+                # No running loop, but asyncio.run still failed - try the old way
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    return loop.run_until_complete(coro)
+                finally:
+                    loop.close()
         else:
             raise
 
