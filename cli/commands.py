@@ -17,7 +17,11 @@ from core.scraper import WebScraper
 from utils.config import Config
 from utils.logging_config import setup_logging
 
-app = typer.Typer(help="WebScraper CLI - Scrape, crawl and convert websites to PDF")
+app = typer.Typer(
+    help="WebScraper CLI - Scrape, crawl and convert websites to PDF",
+    add_completion=False,
+    context_settings={"help_option_names": ["-h", "--help"]}
+)
 console = Console()
 
 @app.command()

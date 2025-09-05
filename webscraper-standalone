@@ -1,0 +1,44 @@
+#!/bin/bash
+# Standalone WebScraper CLI that handles virtual environment automatically
+
+# Get the directory where this script is located (resolve symlinks for macOS)
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    # macOS
+    SCRIPT_PATH="$(python -c "import os; print(os.path.realpath('${BASH_SOURCE[0]}'))")"
+else
+    # Linux
+    SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+fi
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+WEBSCRAPER_DIR="$SCRIPT_DIR"
+VENV_DIR="$WEBSCRAPER_DIR/webscraper_env"
+
+# Check if virtual environment exists
+if [ ! -d "$VENV_DIR" ]; then
+    echo "❌ Virtual environment not found at $VENV_DIR"
+    echo "   Please run the installation script first:"
+    echo "   cd $WEBSCRAPER_DIR && ./install.sh"
+    exit 1
+fi
+
+# Check if virtual environment has the required packages
+if [ ! -f "$VENV_DIR/bin/python" ]; then
+    echo "❌ Virtual environment is corrupted"
+    echo "   Please reinstall by running:"
+    echo "   cd $WEBSCRAPER_DIR && rm -rf webscraper_env && ./install.sh"
+    exit 1
+fi
+
+# Activate virtual environment and run webscraper
+cd "$WEBSCRAPER_DIR"
+source "$VENV_DIR/bin/activate"
+
+# Check if typer is installed
+if ! python -c "import typer" 2>/dev/null; then
+    echo "❌ Dependencies not installed in virtual environment"
+    echo "   Please run: cd $WEBSCRAPER_DIR && ./install.sh"
+    exit 1
+fi
+
+# Run the webscraper with all arguments
+exec python main.py "$@"
