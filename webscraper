@@ -1,0 +1,33 @@
+#!/usr/bin/env python3
+"""
+WebScraper CLI - Executable entry point
+"""
+
+import sys
+import os
+from pathlib import Path
+
+# Get the directory where this script is located
+script_dir = Path(__file__).parent.resolve()
+
+# Add the project root to Python path
+sys.path.insert(0, str(script_dir))
+
+# Change to the script directory to ensure relative imports work
+os.chdir(script_dir)
+
+# Import and run the main application
+try:
+    from main import main
+    main()
+except ImportError as e:
+    print(f"❌ Error importing WebScraper modules: {e}")
+    print("📁 Make sure you're running this from the WebScraper directory")
+    print("🔧 Install dependencies with: pip install -r requirements.txt")
+    sys.exit(1)
+except KeyboardInterrupt:
+    print("\n⚠️  WebScraper interrupted by user")
+    sys.exit(1)
+except Exception as e:
+    print(f"❌ Unexpected error: {e}")
+    sys.exit(1)

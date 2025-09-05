@@ -1,0 +1,19 @@
+#!/bin/bash
+# Global WebScraper CLI wrapper script
+
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WEBSCRAPER_DIR="$SCRIPT_DIR"
+VENV_DIR="$WEBSCRAPER_DIR/webscraper_env"
+
+# Check if virtual environment exists
+if [ ! -d "$VENV_DIR" ]; then
+    echo "❌ Virtual environment not found at $VENV_DIR"
+    echo "   Please run the installation script first: ./install.sh"
+    exit 1
+fi
+
+# Activate virtual environment and run webscraper
+source "$VENV_DIR/bin/activate"
+cd "$WEBSCRAPER_DIR"
+exec python3 -m main "$@"
